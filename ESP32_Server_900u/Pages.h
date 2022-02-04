@@ -2,7 +2,7 @@ static const char indexData[] PROGMEM = R"==(
 <!DOCTYPE html><html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ESP32 Server</title>
+<title>ESP32 VTX Server</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,7 +19,7 @@ static const char rebootingData[] PROGMEM = R"==(
 <head>
 <meta http-equiv="refresh" content="8; url=/info.html">
 <style type="text/css">#loader {z-index: 1;width: 50px;height: 50px;margin: 0 0 0 0;border: 6px solid #f3f3f3;border-radius: 50%;border-top: 6px solid #3498db;width: 50px;height: 50px;-webkit-animation: spin 2s linear infinite;animation: spin 2s linear infinite; } @-webkit-keyframes spin {0%{-webkit-transform: rotate(0deg);}100%{-webkit-transform: rotate(360deg);}}@keyframes spin{0%{ transform: rotate(0deg);}100%{transform: rotate(360deg);}}
-body {background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}  
+body {background-color: #000020; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}  
 #msgfmt { font-size: 16px; font-weight: normal;}
 #status {font-size: 16px; font-weight: normal;}
 </style>
@@ -41,7 +41,7 @@ static const char updateData[] PROGMEM = R"==(
 <title>Firmware Update</title>
 <style type="text/css">
 #loader {  z-index: 1;  width: 50px;  height: 50px;  margin: 0 0 0 0;  border: 6px solid #f3f3f3;  border-radius: 50%;  border-top: 6px solid #3498db;  width: 50px;  height: 50px;  -webkit-animation: spin 2s linear infinite;  animation: spin 2s linear infinite;}@-webkit-keyframes spin {  0% { -webkit-transform: rotate(0deg); }  100% { -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }}
-body {    background-color: #1451AE; color: #ffffff; font-size: 20px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}  input[type="submit"]:hover {     background: #ffffff;    color: green; }input[type="submit"]:active {     outline-color: green;    color: green;    background: #ffffff; }input[type="button"]:hover {     background: #ffffff;    color: #000000; }input[type="button"]:active {     outline-color: #000000;    color: #000000;    background: #ffffff; }#selfile {  font-size: 16px;  font-weight: normal;}#status {  font-size: 16px;  font-weight: normal;}
+body {    background-color: #000020; color: #ffffff; font-size: 20px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}  input[type="submit"]:hover {     background: #ffffff;    color: green; }input[type="submit"]:active {     outline-color: green;    color: green;    background: #ffffff; }input[type="button"]:hover {     background: #ffffff;    color: #000000; }input[type="button"]:active {     outline-color: #000000;    color: #000000;    background: #ffffff; }#selfile {  font-size: 16px;  font-weight: normal;}#status {  font-size: 16px;  font-weight: normal;}
 </style>
 <script>
 function formatBytes(bytes) {  if(bytes == 0) return '0 Bytes';  var k = 1024,  dm = 2,  sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],  i = Math.floor(Math.log(bytes) / Math.log(k));  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];}
@@ -65,7 +65,7 @@ static const char uploadData[] PROGMEM = R"==(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>File Upload</title>
 <style type="text/css">
-#loader {  z-index: 1;  width: 50px;  height: 50px;  margin: 0 0 0 0;  border: 6px solid #f3f3f3;  border-radius: 50%;  border-top: 6px solid #3498db;  width: 50px;  height: 50px;  -webkit-animation: spin 2s linear infinite;  animation: spin 2s linear infinite;}@-webkit-keyframes spin {  0% { -webkit-transform: rotate(0deg); }  100% { -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }}body {    background-color: #1451AE; color: #ffffff; font-size: 20px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}  input[type="submit"]:hover {     background: #ffffff;    color: green; }input[type="submit"]:active {     outline-color: green;    color: green;    background: #ffffff;  } input[type="button"]:hover {     background: #ffffff;    color: #000000; }input[type="button"]:active {     outline-color: #000000;    color: #000000;    background: #ffffff; }#selfile {  font-size: 16px;  font-weight: normal;}#status {  font-size: 16px;  font-weight: normal;}
+#loader {  z-index: 1;  width: 50px;  height: 50px;  margin: 0 0 0 0;  border: 6px solid #f3f3f3;  border-radius: 50%;  border-top: 6px solid #3498db;  width: 50px;  height: 50px;  -webkit-animation: spin 2s linear infinite;  animation: spin 2s linear infinite;}@-webkit-keyframes spin {  0% { -webkit-transform: rotate(0deg); }  100% { -webkit-transform: rotate(360deg); }}@keyframes spin {  0% { transform: rotate(0deg); }  100% { transform: rotate(360deg); }}body {    background-color: #000020; color: #ffffff; font-size: 20px;  font-weight: bold;    margin: 0 0 0 0.0;    padding: 0.4em 0.4em 0.4em 0.6em;}  input[type="submit"]:hover {     background: #ffffff;    color: green; }input[type="submit"]:active {     outline-color: green;    color: green;    background: #ffffff;  } input[type="button"]:hover {     background: #ffffff;    color: #000000; }input[type="button"]:active {     outline-color: #000000;    color: #000000;    background: #ffffff; }#selfile {  font-size: 16px;  font-weight: normal;}#status {  font-size: 16px;  font-weight: normal;}
 </style>
 <script>
 function formatBytes(bytes) {  if(bytes == 0) return '0 Bytes';  var k = 1024,  dm = 2,  sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'],  i = Math.floor(Math.log(bytes) / Math.log(k));  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];}
@@ -136,7 +136,7 @@ static const char autohenData[] PROGMEM = R"==(
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ESP Server</title>
+<title>ESP32 VTX Server</title>
 <script>
 function setpayload(payload,title,waittime)
 {
@@ -156,7 +156,7 @@ function setpayload(payload,title,waittime)
 
 static const char styleData[] PROGMEM = R"==(
 body {
-background-color: #1451AE;
+background-color: #000020;
 color: #ffffff;
 font-size: 14px;
 font-weight: bold;
@@ -267,7 +267,7 @@ display: block;
 }
 
 .sidenav a:hover {
-color: #1451AE;
+color: #000020;
 }
 
 msg {

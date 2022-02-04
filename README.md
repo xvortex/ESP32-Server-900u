@@ -2,40 +2,11 @@
 
 <br>
 
-This is a project designed for the <a href=https://www.espressif.com/en/products/socs/esp32-s2>ESP32-S2 boards</a> to provide a wifi http server, dns server and USB storage emulation.
+This is a project designed for the <a href=https://www.espressif.com/en/products/socs/esp32>ESP32</a> and <a href=https://www.espressif.com/en/products/socs/esp32-s2>ESP32-S2</a> boards to provide a wifi http server, dns server and USB storage emulation.
 
-it is for the <a href=https://github.com/ChendoChap/pOOBs4>PS4 9.00 OOB Exploit</a> and the <a href=https://www.espressif.com/en/products/socs/esp32-s2>ESP32 S2</a> boards, it <b>will not work on the original <a href=https://www.espressif.com/en/products/modules/esp32>ESP32</a> boards</b> as they do not support the usb functions required by this project.
+it uses the <a href=https://github.com/ChendoChap/pOOBs4>PS4 9.00 OOB Exploit</a>.
 
-you do not need a usb drive with this project as it emulates a usb mass storage device to the console and triggers a filesystem bug to leverage the exploit(exfathax).
-
-<br>
-
-<hr>these boards can be used for a plug and play setup(no wiring)<br>
-<br>
-4MB boards<br>
-
-&nbsp; &nbsp; &nbsp; <a href=https://www.wemos.cc/en/latest/s2/s2_mini.html>S2 Mini</a><br>
-✅ <a href=https://unexpectedmaker.com/tinys2>TinyS2</a><br>
-✅ <a href="https://www.adafruit.com/product/5325">Adafruit QT Py ESP32-S2</a><br>
-✅ <a href=https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/hw-reference/esp32s2/user-guide-s2-devkitc-1.html>ESP32-S2-DevKitC-1</a><br>
-&nbsp; &nbsp; &nbsp; <a href="http://www.lilygo.cn/prod_view.aspx?TypeId=50063&Id=1320&FId=t3:50063:3">ESP32-S2 ESP32-S2-WOOR</a><br>
-&nbsp; &nbsp; &nbsp; <a href="http://www.lilygo.cn/prod_view.aspx?TypeId=50063&Id=1300&FId=t3:50063:3">ESP32-S2 ESP32-S2 TF Card Slot</a><br>
-
-16MB boards<br>
-✅ <a href=https://feathers2.io/>FeatherS2</a><br>
-
-<br>
-
-<hr>these boards will need a usb A plug wired up to them.<br>
-<br>
-4MB boards<br>
-
-✅ <a href=https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/hw-reference/esp32s2/user-guide-devkitm-1-v1.html>ESP32-S2-DevKitM-1</a> Wiring <a href=https://github.com/stooged/ESP32-Server-900u/blob/main/Images/esp32-s2-devkitm-1.jpg>Diagram</a><br>
-✅ <a href=https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/hw-reference/esp32s2/user-guide-saola-1-v1.2.html>ESP32-S2-Saola-1</a> Wiring <a href=https://github.com/stooged/ESP32-Server-900u/blob/main/Images/esp32-s2-saola-1.jpg>Diagram</a><br>
-
-<br><hr>
-
-(✅ = Tested boards)
+it based on the <a href=https://github.com/stooged/ESP32-Server-900u> ESP32-Server-900u</a> by <b>stooged</b>. 
 
 <br><br>
 
@@ -92,16 +63,12 @@ you can access the main page from the userguide or the consoles webbrowser using
 installation is simple you just use the arduino ide to flash the sketch/firmware to the esp32 board.<br>
 <br>
 <br>
-next you connect to the wifi access point with a pc/laptop, <b>PS4_WEB_AP</b> is the default SSID and <b>password</b> is the default password.<br>
+next you connect to the wifi access point with a pc/laptop, <b>PS4_VTX</b> is the default SSID and <b>qwertyuiop</b> is the default password.<br>
 then use a webbrowser and goto http://10.1.1.1/admin.html <b>10.1.1.1</b> is the defult webserver ip.<br>
-on the side menu of the admin page select <b>File Uploader</b> and then click <b>Select Files</b> and locate the <b>data</b> folder inside the <b>ESP32_Server_900</b> folder in this repo and select all the files inside the <b>data</b> folder and click <b>Upload Files</b>
+on the side menu of the admin page select <b>File Uploader</b> and then click <b>Select Files</b> and locate the <b>data</b> folder inside the <b>ESP32_Server_900u</b> folder in this repo and select all the files inside the <b>data</b> folder and click <b>Upload Files</b>
 you can then goto <b>Config Editor</b> and change the password for the wifi ap.
 
 
 alternatively if you install this <a href=https://github.com/etherfi/arduino-esp32fs-plugin-esp32s2>plugin</a> to the arduino ide you can upload the files to the esp32-s2 with the arduino ide by selecting <b>Tools > ESP32 Sketch Data Upload</b>
 
 <a href=https://github.com/etherfi/arduino-esp32fs-plugin-esp32s2>Arduino ESP32-S2 filesystem uploader</a>
-
-<img src=https://github.com/stooged/ESP32-Server-900u/blob/main/Images/dataup.jpg><br><br>
-
-the files uploaded using this method are found in the <b>data</b> folder inside the <b>ESP32_Server_900u</b> folder.

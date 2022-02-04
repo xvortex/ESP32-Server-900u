@@ -7,38 +7,31 @@
 #include <Update.h>
 #include "Loader.h"
 #include "Pages.h"
-#include "exfathax.h"
-#include "USB.h"
-#include "USBMSC.h"
+
+#define USBEMU false // true = USB Emulation on ESP32-S2, false = usbPin driven
 
                     // enable internal goldhen.h [ true / false ]
 #define INTHEN true // goldhen is placed in the app partition to free up space on spiffs for other payloads, target partition scheme: [No OTA (1MB APP/3MB SPIFFS)]
                     // with this enabled you do not upload goldhen to the board, set this to false if you wish to upload goldhen
 
-                      // enable autohen [ true / false ]
-#define AUTOHEN false // this will load goldhen instead of the normal index/payload selection page, use this if you only want hen and no other payloads.
-                      // INTHEN must be set to true for this to work       
-                     
+#if USBEMU
+#include "exfathax.h"
+#include "USB.h"
+#include "USBMSC.h"
+#else
+#define usbPin 4  // set the pin you want to use for usb control
+#endif
+
 #if INTHEN
 #include "goldhen.h"
 #endif
-
-/*
-#if ARDUINO_USB_CDC_ON_BOOT
-#define HWSerial Serial0
-#define USBSerial Serial
-#else
-#define HWSerial Serial
-USBCDC USBSerial;
-#endif
-*/
 
 //-------------------DEFAULT SETTINGS------------------//
 
 //create access point
 boolean startAP = true;
-String AP_SSID = "PS4_WEB_AP";
-String AP_PASS = "password";
+String AP_SSID = "PS4_VTX";
+String AP_PASS = "qwertyuiop";
 IPAddress Server_IP(10,1,1,1);
 IPAddress Subnet_Mask(255,255,255,0);
 
@@ -52,16 +45,19 @@ String WIFI_HOSTNAME = "ps4.local";
 int WEB_PORT = 80;
 
 //Auto Usb Wait(milliseconds)
-int USB_WAIT = 10000;
+int USB_WAIT = 12000;
 //-----------------------------------------------------//
 
-String firmwareVer = "1.00";
+String firmwareVer = "2.01";
 DNSServer dnsServer;
 AsyncWebServer server(WEB_PORT);
 boolean hasEnabled = false;
 long enTime = 0;
 File upFile;
+
+#if USBEMU
 USBMSC dev;
+#endif
 
 
 String split(String str, String from, String to)
@@ -191,7 +187,7 @@ void handleFwUpdate(AsyncWebServerRequest *request, String filename, size_t inde
     if(final){
       if(Update.end(true)){
         //HWSerial.printf("Update Success: %uB\n", index+len);
-        String tmphtm = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">body {background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}</style></head><center><br><br><br><br><br><br>Update Success, Rebooting.</center></html>";
+        String tmphtm = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">body {background-color: #000020; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;}</style></head><center><br><br><br><br><br><br>Update Success, Rebooting.</center></html>";
         request->send(200, "text/html", tmphtm);
         delay(1000);
         ESP.restart();
@@ -253,7 +249,7 @@ void handleFileMan(AsyncWebServerRequest *request) {
 
 void handlePayloads(AsyncWebServerRequest *request) {
   File dir = SPIFFS.open("/");
-  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP Server</title><link rel=\"stylesheet\" href=\"style.css\"><style>body { background-color: #1451AE; color: #ffffff; font-size: 14px; font-weight: bold; margin: 0 0 0 0.0; overflow-y:hidden; text-shadow: 3px 2px DodgerBlue;}</style><script>function setpayload(payload,title,waittime){ sessionStorage.setItem('payload', payload); sessionStorage.setItem('title', title); sessionStorage.setItem('waittime', waittime);  window.open('loader.html', '_self');}</script></head><body><center><h1>9.00 Payloads</h1>";
+  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>ESP32 VTX Server</title><link rel=\"stylesheet\" href=\"style.css\"><style>body { background-color: #000020; color: #ffffff; font-size: 14px; font-weight: bold; margin: 0 0 0 0.0; overflow-y:hidden;}</style><script>function setpayload(payload,title,waittime){ sessionStorage.setItem('payload', payload); sessionStorage.setItem('title', title); sessionStorage.setItem('waittime', waittime);  window.open('loader.html', '_self');}</script></head><body><center><h1>9.00 Payloads</h1>";
   int cntr = 0;
   int payloadCount = 0;
   if (USB_WAIT < 5000){USB_WAIT = 5000;} // correct unrealistic timing values
@@ -287,10 +283,18 @@ void handlePayloads(AsyncWebServerRequest *request) {
     file.close();
     file = dir.openNextFile();
   }
+#if INTHEN
+  if (payloadCount == 1)
+  {
+      request->send(200, "text/html", autohenData);
+      return;
+  }
+#else
   if (payloadCount == 0)
   {
       output += "<msg>No .bin payloads found<br>You need to upload the payloads to the ESP32 board.<br>in the arduino ide select <b>Tools</b> &gt; <b>ESP32 Sketch Data Upload</b><br>or<br>Using a pc/laptop connect to <b>" + AP_SSID + "</b> and navigate to <a href=\"/admin.html\"><u>http://" + WIFI_HOSTNAME + "/admin.html</u></a> and upload the .bin payloads using the <b>File Uploader</b></msg></center></body></html>";
   }
+#endif
   output += "</center></body></html>";
   request->send(200, "text/html", output);
 }
@@ -324,7 +328,7 @@ void handleConfig(AsyncWebServerRequest *request)
     iniFile.print("\r\nAP_SSID=" + AP_SSID + "\r\nAP_PASS=" + AP_PASS + "\r\nWEBSERVER_IP=" + tmpip + "\r\nWEBSERVER_PORT=" + tmpwport + "\r\nSUBNET_MASK=" + tmpsubn + "\r\nWIFI_SSID=" + WIFI_SSID + "\r\nWIFI_PASS=" + WIFI_PASS + "\r\nWIFI_HOST=" + WIFI_HOSTNAME + "\r\nUSEAP=" + tmpua + "\r\nCONWIFI=" + tmpcw + "\r\nUSBWAIT=" + USB_WAIT + "\r\n");
     iniFile.close();
     }
-    String htmStr = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">#loader {z-index: 1;width: 50px;height: 50px;margin: 0 0 0 0;border: 6px solid #f3f3f3;border-radius: 50%;border-top: 6px solid #3498db;width: 50px;height: 50px;-webkit-animation: spin 2s linear infinite;animation: spin 2s linear infinite; } @-webkit-keyframes spin {0%{-webkit-transform: rotate(0deg);}100%{-webkit-transform: rotate(360deg);}}@keyframes spin{0%{ transform: rotate(0deg);}100%{transform: rotate(360deg);}}body {background-color: #1451AE; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;} #msgfmt {font-size: 16px; font-weight: normal;}#status {font-size: 16px; font-weight: normal;}</style></head><center><br><br><br><br><br><p id=\"status\"><div id='loader'></div><br>Config saved<br>Rebooting</p></center></html>";
+    String htmStr = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"8; url=/info.html\"><style type=\"text/css\">#loader {z-index: 1;width: 50px;height: 50px;margin: 0 0 0 0;border: 6px solid #f3f3f3;border-radius: 50%;border-top: 6px solid #3498db;width: 50px;height: 50px;-webkit-animation: spin 2s linear infinite;animation: spin 2s linear infinite; } @-webkit-keyframes spin {0%{-webkit-transform: rotate(0deg);}100%{-webkit-transform: rotate(360deg);}}@keyframes spin{0%{ transform: rotate(0deg);}100%{transform: rotate(360deg);}}body {background-color: #000020; color: #ffffff; font-size: 20px; font-weight: bold; margin: 0 0 0 0.0; padding: 0.4em 0.4em 0.4em 0.6em;} #msgfmt {font-size: 16px; font-weight: normal;}#status {font-size: 16px; font-weight: normal;}</style></head><center><br><br><br><br><br><p id=\"status\"><div id='loader'></div><br>Config saved<br>Rebooting</p></center></html>";
     request->send(200, "text/html", htmStr);
     delay(1000);
     ESP.restart();
@@ -351,7 +355,7 @@ void handleConfigHtml(AsyncWebServerRequest *request)
   String tmpCw = "";
   if (startAP){tmpUa = "checked";}
   if (connectWifi){tmpCw = "checked";}
-  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Config Editor</title><style type=\"text/css\">body {background-color: #1451AE; color: #ffffff; font-size: 14px;font-weight: bold;margin: 0 0 0 0.0;padding: 0.4em 0.4em 0.4em 0.6em;}input[type=\"submit\"]:hover {background: #ffffff;color: green;}input[type=\"submit\"]:active{outline-color: green;color: green;background: #ffffff; }table {font-family: arial, sans-serif;border-collapse: collapse;}td {border: 1px solid #dddddd;text-align: left;padding: 8px;}th {border: 1px solid #dddddd; background-color:gray;text-align: center;padding: 8px;}</style></head><body><form action=\"/config.html\" method=\"post\"><center><table><tr><th colspan=\"2\"><center>Access Point</center></th></tr><tr><td>AP SSID:</td><td><input name=\"ap_ssid\" value=\"" + AP_SSID + "\"></td></tr><tr><td>AP PASSWORD:</td><td><input name=\"ap_pass\" value=\"********\"></td></tr><tr><td>AP IP:</td><td><input name=\"web_ip\" value=\"" + Server_IP.toString() + "\"></td></tr><tr><td>SUBNET MASK:</td><td><input name=\"subnet\" value=\"" + Subnet_Mask.toString() + "\"></td></tr><tr><td>START AP:</td><td><input type=\"checkbox\" name=\"useap\" " + tmpUa +"></td></tr><tr><th colspan=\"2\"><center>Web Server</center></th></tr><tr><td>WEBSERVER PORT:</td><td><input name=\"web_port\" value=\"" + String(WEB_PORT) + "\"></td></tr><tr><th colspan=\"2\"><center>Wifi Connection</center></th></tr><tr><td>WIFI SSID:</td><td><input name=\"wifi_ssid\" value=\"" + WIFI_SSID + "\"></td></tr><tr><td>WIFI PASSWORD:</td><td><input name=\"wifi_pass\" value=\"********\"></td></tr><tr><td>WIFI HOSTNAME:</td><td><input name=\"wifi_host\" value=\"" + WIFI_HOSTNAME + "\"></td></tr><tr><td>CONNECT WIFI:</td><td><input type=\"checkbox\" name=\"usewifi\" " + tmpCw + "></tr><tr><th colspan=\"2\"><center>Auto USB Wait</center></th></tr><tr><td>WAIT TIME(ms):</td><td><input name=\"usbwait\" value=\"" + USB_WAIT + "\"></td></tr></table><br><input id=\"savecfg\" type=\"submit\" value=\"Save Config\"></center></form></body></html>";
+  String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Config Editor</title><style type=\"text/css\">body {background-color: #000020; color: #ffffff; font-size: 14px;font-weight: bold;margin: 0 0 0 0.0;padding: 0.4em 0.4em 0.4em 0.6em;}input[type=\"submit\"]:hover {background: #ffffff;color: green;}input[type=\"submit\"]:active{outline-color: green;color: green;background: #ffffff; }table {font-family: arial, sans-serif;border-collapse: collapse;}td {border: 1px solid #dddddd;text-align: left;padding: 8px;}th {border: 1px solid #dddddd; background-color:gray;text-align: center;padding: 8px;}</style></head><body><form action=\"/config.html\" method=\"post\"><center><table><tr><th colspan=\"2\"><center>Access Point</center></th></tr><tr><td>AP SSID:</td><td><input name=\"ap_ssid\" value=\"" + AP_SSID + "\"></td></tr><tr><td>AP PASSWORD:</td><td><input name=\"ap_pass\" value=\"********\"></td></tr><tr><td>AP IP:</td><td><input name=\"web_ip\" value=\"" + Server_IP.toString() + "\"></td></tr><tr><td>SUBNET MASK:</td><td><input name=\"subnet\" value=\"" + Subnet_Mask.toString() + "\"></td></tr><tr><td>START AP:</td><td><input type=\"checkbox\" name=\"useap\" " + tmpUa +"></td></tr><tr><th colspan=\"2\"><center>Web Server</center></th></tr><tr><td>WEBSERVER PORT:</td><td><input name=\"web_port\" value=\"" + String(WEB_PORT) + "\"></td></tr><tr><th colspan=\"2\"><center>Wifi Connection</center></th></tr><tr><td>WIFI SSID:</td><td><input name=\"wifi_ssid\" value=\"" + WIFI_SSID + "\"></td></tr><tr><td>WIFI PASSWORD:</td><td><input name=\"wifi_pass\" value=\"********\"></td></tr><tr><td>WIFI HOSTNAME:</td><td><input name=\"wifi_host\" value=\"" + WIFI_HOSTNAME + "\"></td></tr><tr><td>CONNECT WIFI:</td><td><input type=\"checkbox\" name=\"usewifi\" " + tmpCw + "></tr><tr><th colspan=\"2\"><center>Auto USB Wait</center></th></tr><tr><td>WAIT TIME(ms):</td><td><input name=\"usbwait\" value=\"" + USB_WAIT + "\"></td></tr></table><br><input id=\"savecfg\" type=\"submit\" value=\"Save Config\"></center></form></body></html>";
   request->send(200, "text/html", htmStr);
 }
 
@@ -445,6 +449,10 @@ void writeConfig()
 }
 
 void setup(){
+#if !USBEMU
+  pinMode(usbPin, OUTPUT);
+  digitalWrite(usbPin, LOW);
+#endif
   //HWSerial.begin(115200);
   //HWSerial.println("Version: " + firmwareVer);
   //USBSerial.begin();
@@ -706,11 +714,7 @@ void setup(){
     }	 
     if (path.endsWith("payloads.html"))
     {
-        #if INTHEN && AUTOHEN
-          request->send(200, "text/html", autohenData);
-        #else
-          handlePayloads(request);
-        #endif
+        handlePayloads(request);
         return;
     }
     if (path.endsWith("loader.html"))
@@ -730,6 +734,7 @@ void setup(){
 
 }
 
+#if USBEMU
 
 static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize){
   if (lba > 4){lba = 4;}
@@ -760,9 +765,28 @@ void disableUSB()
   ESP.restart();
 }
 
+#else
+
+void enableUSB()
+{
+   digitalWrite(usbPin, HIGH);
+   enTime = millis();
+   hasEnabled = true;
+}
+
+
+void disableUSB()
+{
+   enTime = 0;
+   hasEnabled = false;
+   digitalWrite(usbPin, LOW);
+}
+
+#endif
+
 
 void loop(){
-   if (hasEnabled && millis() >= (enTime + 15000))
+   if (hasEnabled && millis() >= (enTime + 30000))
    {
     disableUSB();
    } 

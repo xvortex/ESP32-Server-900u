@@ -48,7 +48,7 @@ int WEB_PORT = 80;
 int USB_WAIT = 12000;
 //-----------------------------------------------------//
 
-String firmwareVer = "2.02";
+String firmwareVer = "2.1.1";
 DNSServer dnsServer;
 AsyncWebServer server(WEB_PORT);
 boolean hasEnabled = false;

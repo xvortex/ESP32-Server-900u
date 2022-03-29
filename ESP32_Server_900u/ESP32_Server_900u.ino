@@ -1,6 +1,7 @@
 #include <FS.h>
 #include "WiFi.h"
 #include "ESPAsyncWebServer.h"
+#include "esp_task_wdt.h"
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <Update.h>
@@ -16,30 +17,42 @@
 #error "Selected board not supported"
 #endif
 
-#include "Loader.h"
-#include "Pages.h"
+
+                     // use SD Card [ true / false ]
+#define USESD false  // a FAT32 formatted SD Card will be used instead of the onboard flash for the storage.
+                     // this requires a board with a sd card slot or a sd card connected.
 
                      // use FatFS not SPIFFS [ true / false ]
 #define USEFAT false // FatFS will be used instead of SPIFFS for the storage filesystem or for larger partitons on boards with more than 4mb flash.
                      // you must select a partition scheme labeled with "FAT" or "FATFS" with this enabled.
 
+                     // use LITTLEFS not SPIFFS [ true / false ]
+#define USELFS false // LITTLEFS will be used instead of SPIFFS for the storage filesystem.
+                     // you must select a partition scheme labeled with "SPIFFS" with this enabled and USEFAT must be false.
+
                     // enable internal goldhen.h [ true / false ]
 #define INTHEN true // goldhen is placed in the app partition to free up space on the storage for other payloads.
                     // with this enabled you do not upload goldhen to the board, set this to false if you wish to upload goldhen.
 
-#if USEFAT
-#include "FFat.h"
-#define FILESYS FFat 
-#else
-#include "SPIFFS.h"
-#define FILESYS SPIFFS 
+                    // enable fan threshold [ true / false ]
+#define FANMOD true // this will include a function to set the consoles fan ramp up temperature in °C
+                    // this will not work if the board is a esp32 and the usb control is disabled.
+
+
+                       // enable esp sleep [ true / false ]
+#define ESPSLEEP false // this will put the esp board to sleep after [TIME2SLEEP] minutes
+                       // to wake the board up you will need to reboot the console or unplug/replug the esp board or press the reset button on the board.
+                       
+#if ESPSLEEP
+#define TIME2SLEEP 30 // minutes, the esp will goto sleep after this amount of time passes since boot.
 #endif
 
-#if INTHEN
-#include "goldhen.h"
-#endif
 
 //-------------------DEFAULT SETTINGS------------------//
+
+                       // use config.ini [ true / false ]
+#define USECONFIG true // this will allow you to change these settings below via the admin webpage.
+                       // if you want to permanently use the values below then set this to false.
 
 //create access point
 boolean startAP = true;
@@ -59,13 +72,55 @@ int WEB_PORT = 80;
 
 //Auto Usb Wait(milliseconds)
 int USB_WAIT = 12000;
+
+// Displayed firmware version
+String firmwareVer = "2.2.2";
+
 //-----------------------------------------------------//
 
-String firmwareVer = "2.1.1";
+
+#include "Loader.h"
+#include "Pages.h"
+#include "jzip.h"
+
+#if USESD
+#include "SD.h"
+#include "SPI.h"
+#define SCK 12   // pins for sd card
+#define MISO 13  // these values are set for the LILYGO TTGO T8 ESP32-S2 board
+#define MOSI 11  // you may need to change these for other boards
+#define SS 10
+#define FILESYS SD 
+#else
+#if USEFAT
+#include "FFat.h"
+#define FILESYS FFat 
+#else
+#if USELFS
+#include <LittleFS.h>
+#define FILESYS LittleFS 
+#else
+#include "SPIFFS.h"
+#define FILESYS SPIFFS 
+#endif
+#endif
+#endif
+
+#if INTHEN
+#include "goldhen.h"
+#endif
+
+#if (!defined(USBCONTROL) | USBCONTROL) && FANMOD
+#include "fan.h"
+#endif
+
 DNSServer dnsServer;
 AsyncWebServer server(WEB_PORT);
 boolean hasEnabled = false;
+boolean isFormating = false;
 long enTime = 0;
+int ftemp = 70;
+long bootTime = 0;
 File upFile;
 #if defined(CONFIG_IDF_TARGET_ESP32S2) | defined(CONFIG_IDF_TARGET_ESP32S3)
 USBMSC dev;
@@ -144,25 +199,6 @@ String urlencode(String str)
 }
 
 
-String getContentType(String filename){
-  if(filename.endsWith(".htm")) return "text/html";
-  else if(filename.endsWith(".html")) return "text/html";
-  else if(filename.endsWith(".css")) return "text/css";
-  else if(filename.endsWith(".js")) return "application/javascript";
-  else if(filename.endsWith(".png")) return "image/png";
-  else if(filename.endsWith(".gif")) return "image/gif";
-  else if(filename.endsWith(".jpg")) return "image/jpeg";
-  else if(filename.endsWith(".ico")) return "image/x-icon";
-  else if(filename.endsWith(".xml")) return "text/xml";
-  else if(filename.endsWith(".pdf")) return "application/x-pdf";
-  else if(filename.endsWith(".zip")) return "application/x-zip";
-  else if(filename.endsWith(".gz")) return "application/x-gzip";
-  else if(filename.endsWith(".bin")) return "application/octet-stream";
-  else if(filename.endsWith(".manifest")) return "text/cache-manifest";
-  return "text/plain";
-}
-
-
 void sendwebmsg(AsyncWebServerRequest *request, String htmMsg)
 {
     String tmphtm = "<!DOCTYPE html><html><head><link rel=\"stylesheet\" href=\"style.css\"></head><center><br><br><br><br><br><br>" + htmMsg + "</center></html>";
@@ -229,31 +265,70 @@ void handleDelete(AsyncWebServerRequest *request){
 }
 
 
+
 void handleFileMan(AsyncWebServerRequest *request) {
   File dir = FILESYS.open("/");
-  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>File Manager</title><link rel=\"stylesheet\" href=\"style.css\"><style>body{overflow-y:auto;}</style><script>function statusDel(fname) {var answer = confirm(\"Are you sure you want to delete \" + fname + \" ?\");if (answer) {return true;} else { return false; }}</script></head><body><br><table>"; 
+  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>File Manager</title><link rel=\"stylesheet\" href=\"style.css\"><style>body{overflow-y:auto;} th{border: 1px solid #dddddd; background-color:gray;padding: 8px;}</style><script>function statusDel(fname) {var answer = confirm(\"Are you sure you want to delete \" + fname + \" ?\");if (answer) {return true;} else { return false; }} </script></head><body><br><table id=filetable></table><script>var filelist = ["; 
   int fileCount = 0;
-  File file = dir.openNextFile();
-  while(file){
+  while(dir){
+    File file = dir.openNextFile();
+    if (!file)
+    { 
+      dir.close();
+      break;
+    }
     String fname = String(file.name());
-    if (fname.length() > 0 && !fname.equals("config.ini"))
+    if (fname.length() > 0 && !fname.equals("config.ini") && !file.isDirectory())
     {
-    fileCount++;
-    output += "<tr>";
-    output += "<td><a href=\"" +  fname + "\">" + fname + "</a></td>";
-    output += "<td>" + formatBytes(file.size()) + "</td>";
-    output += "<td><a href=\"/" + fname + "\" download><button type=\"submit\">Download</button></a></td>";
-    output += "<td><form action=\"/delete\" method=\"post\"><button type=\"submit\" name=\"file\" value=\"" + fname + "\" onClick=\"return statusDel('" + fname + "');\">Delete</button></form></td>";
-    output += "</tr>";
+      fileCount++;
+      fname.replace("|","%7C");fname.replace("\"","%22");
+      output += "\"" + fname + "|" + formatBytes(file.size()) + "\",";
     }
     file.close();
-    file = dir.openNextFile();
+    esp_task_wdt_reset();
+    
   }
   if (fileCount == 0)
   {
-      output += "<p><center>No files found<br>You can upload files using the <a href=\"/upload.html\" target=\"mframe\"><u>File Uploader</u></a> page.</center></p>";
+      output += "];</script><center>No files found<br>You can upload files using the <a href=\"/upload.html\" target=\"mframe\"><u>File Uploader</u></a> page.</center></p></body></html>";
   }
-  output += "</table></body></html>";
+  else
+  {
+      output += "];var output = \"\";filelist.forEach(function(entry) {var splF = entry.split(\"|\"); output += \"<tr>\";output += \"<td><a href=\\\"\" +  splF[0] + \"\\\">\" + splF[0] + \"</a></td>\"; output += \"<td>\" + splF[1] + \"</td>\";output += \"<td><a href=\\\"/\" + splF[0] + \"\\\" download><button type=\\\"submit\\\">Download</button></a></td>\";output += \"<td><form action=\\\"/delete\\\" method=\\\"post\\\"><button type=\\\"submit\\\" name=\\\"file\\\" value=\\\"\" + splF[0] + \"\\\" onClick=\\\"return statusDel('\" + splF[0] + \"');\\\">Delete</button></form></td>\";output += \"</tr>\";}); document.getElementById(\"filetable\").innerHTML = \"<tr><th colspan='1'><center>File Name</center></th><th colspan='1'><center>File Size</center></th><th colspan='1'><center><a href='/dlall' target='mframe'><button type='submit'>Download All</button></a></center></th><th colspan='1'><center><a href='/format.html' target='mframe'><button type='submit'>Delete All</button></a></center></th></tr>\" + output;</script></body></html>";
+  }
+  request->send(200, "text/html", output);
+}
+
+
+void handleDlFiles(AsyncWebServerRequest *request) {
+  File dir = FILESYS.open("/");
+  String output = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>File Downloader</title><link rel=\"stylesheet\" href=\"style.css\"><style>body{overflow-y:auto;}</style><script type=\"text/javascript\" src=\"jzip.js\"></script><script>var filelist = ["; 
+  int fileCount = 0;
+  while(dir){
+    File file = dir.openNextFile();
+    if (!file)
+    { 
+      dir.close();
+      break;
+    }
+    String fname = String(file.name());
+    if (fname.length() > 0 && !fname.equals("config.ini") && !file.isDirectory())
+    {
+      fileCount++;
+      fname.replace("\"","%22");
+      output += "\"" + fname + "\",";
+    }
+    file.close();
+    esp_task_wdt_reset();
+  }
+  if (fileCount == 0)
+  {
+      output += "];</script></head><center>No files found to download<br>You can upload files using the <a href=\"/upload.html\" target=\"mframe\"><u>File Uploader</u></a> page.</center></p></body></html>";
+  }
+  else
+  {
+      output += "]; async function dlAll(){var zip = new JSZip();for (var i = 0; i < filelist.length; i++) {if (filelist[i] != ''){var xhr = new XMLHttpRequest();xhr.open('GET',filelist[i],false);xhr.overrideMimeType('text/plain; charset=x-user-defined'); xhr.onload = function(e) {if (this.status == 200) {zip.file(filelist[i], this.response,{binary: true});}};xhr.send();document.getElementById('fp').innerHTML = 'Adding: ' + filelist[i];await new Promise(r => setTimeout(r, 50));}}document.getElementById('gen').style.display = 'none';document.getElementById('comp').style.display = 'block';zip.generateAsync({type:'blob'}).then(function(content) {saveAs(content,'esp_files.zip');});}</script></head><body onload='setTimeout(dlAll,100);'><center><br><br><br><br><div id='gen' style='display:block;'><div id='loader'></div><br><br>Generating ZIP<br><p id='fp'></p></div><div id='comp' style='display:none;'><br><br><br><br>Complete<br><br>Downloading: esp_files.zip</div></center></body></html>";
+  }
   request->send(200, "text/html", output);
 }
 
@@ -269,35 +344,48 @@ void handlePayloads(AsyncWebServerRequest *request) {
 #if INTHEN
   payloadCount++;
   cntr++;
-  output +=  "<a onclick=\"setpayload('gldhen.bin','" + String(INTHEN_NAME) + "','" + String(USB_WAIT) + "')\"><button class=\"btn\">" + String(INTHEN_NAME) + "</button></a>&nbsp;";
+  output +=  "<a onclick=\"setpayload('goldhen.bin','" + String(INTHEN_NAME) + "','" + String(USB_WAIT) + "')\"><button class=\"btn\">" + String(INTHEN_NAME) + "</button></a>&nbsp;";
 #endif
 
-  File file = dir.openNextFile();
-  while(file){
+  while(dir){
+    File file = dir.openNextFile();
+    if (!file)
+    { 
+      dir.close();
+      break;
+    }
     String fname = String(file.name());
     if (fname.endsWith(".gz")) {
         fname = fname.substring(0, fname.length() - 3);
     }
-    if (fname.length() > 0 && fname.endsWith(".bin"))
+    if (fname.length() > 0 && fname.endsWith(".bin") && !file.isDirectory())
     {
       payloadCount++;
       String fnamev = fname;
       fnamev.replace(".bin","");
       output +=  "<a onclick=\"setpayload('" + urlencode(fname) + "','" + fnamev + "','" + String(USB_WAIT) + "')\"><button class=\"btn\">" + fnamev + "</button></a>&nbsp;";
       cntr++;
-      if (cntr == 3)
+      if (cntr == 4)
       {
         cntr = 0;
         output +=  "<p></p>";
       }
     }
     file.close();
-    file = dir.openNextFile();
+    esp_task_wdt_reset();
   }
+
+#if (!defined(USBCONTROL) | USBCONTROL) && FANMOD
+  payloadCount++;
+  output +=  "<br><p><a onclick='setfantemp()'><button class='btn'>Set Fan Threshold</button></a><select id='temp' class='slct'></select></p><script>function setfantemp(){var e = document.getElementById('temp');var temp = e.value;var xhr = new XMLHttpRequest();xhr.open('POST', 'setftemp', true);xhr.onload = function(e) {if (this.status == 200) {sessionStorage.setItem('payload', 'fant.bin'); sessionStorage.setItem('title', 'Fan Temp ' + temp + ' &deg;C'); localStorage.setItem('temp', temp); sessionStorage.setItem('waittime', '10000');  window.open('loader.html', '_self');}};xhr.send('temp=' + temp);}var stmp = localStorage.getItem('temp');if (!stmp){stmp = 70;}for(var i=55; i<=85; i=i+5){var s = document.getElementById('temp');var o = document.createElement('option');s.options.add(o);o.text = i + String.fromCharCode(32,176,67);o.value = i;if (i == stmp){o.selected = true;}}</script>";
+#endif
+
 #if INTHEN
   if (payloadCount == 1)
   {
-      request->send(200, "text/html", autohenData);
+      AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", autohen_gz, sizeof(autohen_gz));
+      response->addHeader("Content-Encoding", "gzip");
+      request->send(response);
       return;
   }
 #else
@@ -311,6 +399,7 @@ void handlePayloads(AsyncWebServerRequest *request) {
 }
 
 
+#if USECONFIG
 void handleConfig(AsyncWebServerRequest *request)
 {
   if(request->hasParam("ap_ssid", true) && request->hasParam("ap_pass", true) && request->hasParam("web_ip", true) && request->hasParam("web_port", true) && request->hasParam("subnet", true) && request->hasParam("wifi_ssid", true) && request->hasParam("wifi_pass", true) && request->hasParam("wifi_host", true) && request->hasParam("usbwait", true)) 
@@ -333,6 +422,7 @@ void handleConfig(AsyncWebServerRequest *request)
     String tmpcw = "false";
     if (request->hasParam("useap", true)){tmpua = "true";}
     if (request->hasParam("usewifi", true)){tmpcw = "true";}
+    if (tmpua.equals("false") && tmpcw.equals("false")){tmpua = "true";}
     int USB_WAIT = request->getParam("usbwait", true)->value().toInt();
     File iniFile = FILESYS.open("/config.ini", "w");
     if (iniFile) {
@@ -349,17 +439,21 @@ void handleConfig(AsyncWebServerRequest *request)
    request->redirect("/config.html");
   }
 }
+#endif
 
 
 void handleReboot(AsyncWebServerRequest *request)
 {
   //HWSerial.print("Rebooting ESP");
-  request->send(200, "text/html", rebootingData);
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", rebooting_gz, sizeof(rebooting_gz));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
   delay(1000);
   ESP.restart();
 }
 
 
+#if USECONFIG
 void handleConfigHtml(AsyncWebServerRequest *request)
 {
   String tmpUa = "";
@@ -369,6 +463,7 @@ void handleConfigHtml(AsyncWebServerRequest *request)
   String htmStr = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Config Editor</title><style type=\"text/css\">body {background-color: #000020; color: #ffffff; font-size: 14px;font-weight: bold;margin: 0 0 0 0.0;padding: 0.4em 0.4em 0.4em 0.6em;}input[type=\"submit\"]:hover {background: #ffffff;color: green;}input[type=\"submit\"]:active{outline-color: green;color: green;background: #ffffff; }table {font-family: arial, sans-serif;border-collapse: collapse;}td {border: 1px solid #dddddd;text-align: left;padding: 8px;}th {border: 1px solid #dddddd; background-color:gray;text-align: center;padding: 8px;}</style></head><body><form action=\"/config.html\" method=\"post\"><center><table><tr><th colspan=\"2\"><center>Access Point</center></th></tr><tr><td>AP SSID:</td><td><input name=\"ap_ssid\" value=\"" + AP_SSID + "\"></td></tr><tr><td>AP PASSWORD:</td><td><input name=\"ap_pass\" value=\"********\"></td></tr><tr><td>AP IP:</td><td><input name=\"web_ip\" value=\"" + Server_IP.toString() + "\"></td></tr><tr><td>SUBNET MASK:</td><td><input name=\"subnet\" value=\"" + Subnet_Mask.toString() + "\"></td></tr><tr><td>START AP:</td><td><input type=\"checkbox\" name=\"useap\" " + tmpUa +"></td></tr><tr><th colspan=\"2\"><center>Web Server</center></th></tr><tr><td>WEBSERVER PORT:</td><td><input name=\"web_port\" value=\"" + String(WEB_PORT) + "\"></td></tr><tr><th colspan=\"2\"><center>Wifi Connection</center></th></tr><tr><td>WIFI SSID:</td><td><input name=\"wifi_ssid\" value=\"" + WIFI_SSID + "\"></td></tr><tr><td>WIFI PASSWORD:</td><td><input name=\"wifi_pass\" value=\"********\"></td></tr><tr><td>WIFI HOSTNAME:</td><td><input name=\"wifi_host\" value=\"" + WIFI_HOSTNAME + "\"></td></tr><tr><td>CONNECT WIFI:</td><td><input type=\"checkbox\" name=\"usewifi\" " + tmpCw + "></tr><tr><th colspan=\"2\"><center>Auto USB Wait</center></th></tr><tr><td>WAIT TIME(ms):</td><td><input name=\"usbwait\" value=\"" + USB_WAIT + "\"></td></tr></table><br><input id=\"savecfg\" type=\"submit\" value=\"Save Config\"></center></form></body></html>";
   request->send(200, "text/html", htmStr);
 }
+#endif
 
 
 void handleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -407,16 +502,20 @@ void handleConsoleUpdate(String rgn, AsyncWebServerRequest *request)
   request->send(200, "text/xml", xmlStr);
 }
 
-
 #if !USBCONTROL && defined(CONFIG_IDF_TARGET_ESP32) 
 void handleCacheManifest(AsyncWebServerRequest *request) {
   #if !USBCONTROL
   String output = "CACHE MANIFEST\r\n";
   File dir = FILESYS.open("/");
-  File file = dir.openNextFile();
-  while(file){
+  while(dir){
+    File file = dir.openNextFile();
+    if (!file)
+    { 
+      dir.close();
+      break;
+    }
     String fname = String(file.name());
-    if (fname.length() > 0 && !fname.equals("config.ini"))
+    if (fname.length() > 0 && !fname.equals("config.ini") && !file.isDirectory())
     {
       if (fname.endsWith(".gz")) {
         fname = fname.substring(0, fname.length() - 3);
@@ -424,7 +523,6 @@ void handleCacheManifest(AsyncWebServerRequest *request) {
      output += urlencode(fname) + "\r\n";
     }
      file.close();
-     file = dir.openNextFile();
   }
   if(!instr(output,"index.html\r\n"))
   {
@@ -447,7 +545,10 @@ void handleCacheManifest(AsyncWebServerRequest *request) {
     output += "style.css\r\n";
   }
 #if INTHEN
-  output += "gldhen.bin\r\n";
+  if(!instr(output,"goldhen.bin\r\n"))
+  {
+    output += "goldhen.bin\r\n";
+  }
 #endif
    request->send(200, "text/cache-manifest", output);
   #else
@@ -455,7 +556,6 @@ void handleCacheManifest(AsyncWebServerRequest *request) {
   #endif
 }
 #endif
-
 
 void handleInfo(AsyncWebServerRequest *request)
 {
@@ -480,8 +580,12 @@ void handleInfo(AsyncWebServerRequest *request)
   output += "Flash frequency: " + String(flashFreq) + " MHz<br>";
   output += "Flash write mode: " + String((ideMode == FM_QIO ? "QIO" : ideMode == FM_QOUT ? "QOUT" : ideMode == FM_DIO ? "DIO" : ideMode == FM_DOUT ? "DOUT" : "UNKNOWN")) + "<br><hr>";
   output += "###### Storage information ######<br><br>";
-#if USEFAT
+#if USESD
+  output += "Storage Device: SD<br>";
+#elif USEFAT
   output += "Filesystem: FatFs<br>";
+#elif USELFS
+  output += "Filesystem: LittleFS<br>";
 #else
   output += "Filesystem: SPIFFS<br>";
 #endif
@@ -489,10 +593,13 @@ void handleInfo(AsyncWebServerRequest *request)
   output += "Used Space: " + formatBytes(FILESYS.usedBytes()) + "<br>";
   output += "Free Space: " + formatBytes(FILESYS.totalBytes() - FILESYS.usedBytes()) + "<br><hr>";
 #if defined(CONFIG_IDF_TARGET_ESP32S2) | defined(CONFIG_IDF_TARGET_ESP32S3)
-  output += "###### PSRam information ######<br><br>";
-  output += "Psram Size: " + formatBytes(ESP.getPsramSize()) + "<br>";
-  output += "Free psram: " + formatBytes(ESP.getFreePsram()) + "<br>";
-  output += "Max alloc psram: " + formatBytes(ESP.getMaxAllocPsram()) + "<br><hr>";
+  if (ESP.getPsramSize() > 0)
+  {
+    output += "###### PSRam information ######<br><br>";
+    output += "Psram Size: " + formatBytes(ESP.getPsramSize()) + "<br>";
+    output += "Free psram: " + formatBytes(ESP.getFreePsram()) + "<br>";
+    output += "Max alloc psram: " + formatBytes(ESP.getMaxAllocPsram()) + "<br><hr>";
+  }
 #endif
   output += "###### Ram information ######<br><br>";
   output += "Ram size: " + formatBytes(ESP.getHeapSize()) + "<br>";
@@ -507,6 +614,7 @@ void handleInfo(AsyncWebServerRequest *request)
 }
 
 
+#if USECONFIG
 void writeConfig()
 {
   File iniFile = FILESYS.open("/config.ini", "w");
@@ -519,6 +627,7 @@ void writeConfig()
   iniFile.close();
   }
 }
+#endif
 
 
 void setup(){
@@ -531,7 +640,17 @@ void setup(){
   digitalWrite(usbPin, LOW);
 #endif
 
+
+
+
+#if USESD
+  SPI.begin(SCK, MISO, MOSI, SS);
+  if (FILESYS.begin(SS, SPI)) {
+#else
   if (FILESYS.begin(true)) {
+#endif
+
+  #if USECONFIG  
   if (FILESYS.exists("/config.ini")) {
   File iniFile = FILESYS.open("/config.ini", "r");
   if (iniFile) {
@@ -625,6 +744,7 @@ void setup(){
   {
    writeConfig(); 
   }
+#endif
   }
   else
   {
@@ -691,12 +811,17 @@ void setup(){
    handleCacheManifest(request);
   });
 #endif
+
+#if USECONFIG
   server.on("/config.ini", HTTP_ANY, [](AsyncWebServerRequest *request){
    request->send(404);
   });
+#endif
 
   server.on("/upload.html", HTTP_GET, [](AsyncWebServerRequest *request){
-   request->send(200, "text/html", uploadData);
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", upload_gz, sizeof(upload_gz));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
   });
 
   server.on("/upload.html", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -711,6 +836,7 @@ void setup(){
    handleDelete(request);
   });
 
+#if USECONFIG
   server.on("/config.html", HTTP_GET, [](AsyncWebServerRequest *request){
    handleConfigHtml(request);
   });
@@ -718,13 +844,18 @@ void setup(){
   server.on("/config.html", HTTP_POST, [](AsyncWebServerRequest *request){
    handleConfig(request);
   });
-  
+#endif  
+
   server.on("/admin.html", HTTP_GET, [](AsyncWebServerRequest *request){
-   request->send(200, "text/html", adminData);
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", admin_gz, sizeof(admin_gz));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
   });
   
   server.on("/reboot.html", HTTP_GET, [](AsyncWebServerRequest *request){
-   request->send(200, "text/html", rebootData);
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", reboot_gz, sizeof(reboot_gz));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
   });
   
   server.on("/reboot.html", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -732,7 +863,11 @@ void setup(){
   });
 
   server.on("/update.html", HTTP_GET, [](AsyncWebServerRequest *request){
-   request->send(200, "text/html", updateData);
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", update_gz, sizeof(update_gz));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
+
+
   });
 
   server.on("/update.html", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -751,12 +886,49 @@ void setup(){
    disableUSB();
    request->send(200, "text/plain", "ok");
   });
-  
-#if INTHEN
-  server.on("/gldhen.bin", HTTP_GET, [](AsyncWebServerRequest *request){
-   AsyncWebServerResponse *response = request->beginResponse_P(200, "application/octet-stream", goldhen_gz, sizeof(goldhen_gz));
-   response->addHeader("Content-Encoding", "gzip");
+
+  server.on("/format.html", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", format_gz, sizeof(format_gz));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
+  });
+
+  server.on("/format.html", HTTP_POST, [](AsyncWebServerRequest *request){
+    isFormating = true;
+    request->send(304);
+  });
+
+  server.on("/dlall", HTTP_GET, [](AsyncWebServerRequest *request){
+    handleDlFiles(request);
+  });
+
+  server.on("/jzip.js", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/javascript", jzip_gz, sizeof(jzip_gz));
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
+  });
+
+#if (!defined(USBCONTROL) | USBCONTROL) && FANMOD
+  server.on("/setftemp", HTTP_POST, [](AsyncWebServerRequest *request){
+    if (request->hasParam("temp", true))
+    {
+      ftemp = request->getParam("temp", true)->value().toInt();
+      request->send(200, "text/plain", "ok");
+    }
+    else
+    {
+      request->send(404);
+    }
+  });
+
+  server.on("/fant.bin", HTTP_GET, [](AsyncWebServerRequest *request){
+   if (ftemp < 55 || ftemp > 85){ftemp = 70;}
+   uint8_t *fant = (uint8_t *) malloc(sizeof(uint8_t)*sizeof(fan)); 
+   memcpy_P(fant, fan, sizeof(fan));
+   fant[250] = ftemp; fant[368] = ftemp;
+   AsyncWebServerResponse *response = request->beginResponse_P(200, "application/octet-stream", fant , sizeof(fan));
    request->send(response);
+   free(fant);
   });
 #endif
 
@@ -778,18 +950,24 @@ void setup(){
     }
     if (path.endsWith("index.html") || path.endsWith("index.htm") || path.endsWith("/"))
     {
-        request->send(200, "text/html", indexData);
+        AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_gz, sizeof(index_gz));
+        response->addHeader("Content-Encoding", "gzip");
+        request->send(response);
         return;
     }
     if (path.endsWith("style.css"))
     {
-        request->send(200, "text/css", styleData);
+        AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", style_gz, sizeof(style_gz));
+        response->addHeader("Content-Encoding", "gzip");
+        request->send(response);
         return;
     }   
 #if !USBCONTROL && defined(CONFIG_IDF_TARGET_ESP32)    
     if (path.endsWith("menu.html"))
     {
-        request->send(200, "text/html", menuData);
+        AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", menu_gz, sizeof(menu_gz));
+        response->addHeader("Content-Encoding", "gzip");
+        request->send(response);
         return;
     }
 #endif    
@@ -805,6 +983,17 @@ void setup(){
         request->send(response);
         return;
     }
+
+#if INTHEN
+    if (path.endsWith("goldhen.bin"))
+    {
+        AsyncWebServerResponse *response = request->beginResponse_P(200, "application/octet-stream", goldhen_gz, sizeof(goldhen_gz));
+        response->addHeader("Content-Encoding", "gzip");
+        request->send(response);
+        return;
+    }
+#endif
+
     request->send(404);
   });
 
@@ -812,6 +1001,8 @@ void setup(){
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
   server.begin();
   //HWSerial.println("HTTP server started");
+
+  bootTime = millis();
 }
 
 
@@ -821,10 +1012,7 @@ static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufs
   memcpy(buffer, exfathax[lba] + offset, bufsize);
   return bufsize;
 }
-#endif
 
-
-#if defined(CONFIG_IDF_TARGET_ESP32S2) | defined(CONFIG_IDF_TARGET_ESP32S3)
 void enableUSB()
 {
   dev.vendorID("PS4");
@@ -838,7 +1026,6 @@ void enableUSB()
   hasEnabled = true;
 }
 
-
 void disableUSB()
 {
   enTime = 0;
@@ -846,9 +1033,7 @@ void disableUSB()
   dev.end();
   ESP.restart();
 }
-
 #else
-
 void enableUSB()
 {
    digitalWrite(usbPin, HIGH);
@@ -862,14 +1047,35 @@ void disableUSB()
    hasEnabled = false;
    digitalWrite(usbPin, LOW);
 }
-
 #endif
 
 
 void loop(){
+#if ESPSLEEP
+   if (millis() >= (bootTime + (TIME2SLEEP * 60000)))
+   {
+    //HWSerial.print("Esp sleep");
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+    esp_deep_sleep_start();
+   }
+#endif
    if (hasEnabled && millis() >= (enTime + 30000))
    {
     disableUSB();
    } 
+#if !USESD   
+   if (isFormating)
+   {
+    //HWSerial.print("Formatting Storage");
+    isFormating = false;
+    FILESYS.end();
+    FILESYS.format();
+    FILESYS.begin(true);
+    delay(1000);
+#if USECONFIG
+    writeConfig();
+#endif
+   } 
+#endif
    dnsServer.processNextRequest();
 }

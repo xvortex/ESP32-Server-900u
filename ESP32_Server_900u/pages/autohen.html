@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32 VTX Server</title>
+<script>
+function setpayload(payload,title,waittime)
+{
+   sessionStorage.setItem('payload', payload);
+   sessionStorage.setItem('title', title);
+   sessionStorage.setItem('waittime', waittime);
+   window.open("loader.html", "_self");
+}
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body onload="setpayload('goldhen.bin','GoldHEN','12000');">
+</body>
+</html>

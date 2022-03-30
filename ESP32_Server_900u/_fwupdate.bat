@@ -1,0 +1,1 @@
+@move ESP32_Server_900u.ino.*.bin fwupdate.bin

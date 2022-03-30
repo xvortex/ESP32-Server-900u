@@ -6,6 +6,11 @@
 #include <ESPmDNS.h>
 #include <Update.h>
 
+// Displayed firmware version
+String firmwareVer = "2.2.2";
+
+#define INTHEN_NAME "GoldHEN v2.2.2"
+
 #if defined(CONFIG_IDF_TARGET_ESP32S2) | defined(CONFIG_IDF_TARGET_ESP32S3) // ESP32-S2/S3 BOARDS(usb emulation)
 #include "USB.h"
 #include "USBMSC.h"
@@ -16,7 +21,6 @@
 #else
 #error "Selected board not supported"
 #endif
-
 
                      // use SD Card [ true / false ]
 #define USESD false  // a FAT32 formatted SD Card will be used instead of the onboard flash for the storage.
@@ -34,10 +38,9 @@
 #define INTHEN true // goldhen is placed in the app partition to free up space on the storage for other payloads.
                     // with this enabled you do not upload goldhen to the board, set this to false if you wish to upload goldhen.
 
-                    // enable fan threshold [ true / false ]
-#define FANMOD true // this will include a function to set the consoles fan ramp up temperature in °C
-                    // this will not work if the board is a esp32 and the usb control is disabled.
-
+                     // enable fan threshold [ true / false ]
+#define FANMOD false // this will include a function to set the consoles fan ramp up temperature in °C
+                     // this will not work if the board is a esp32 and the usb control is disabled.
 
                        // enable esp sleep [ true / false ]
 #define ESPSLEEP false // this will put the esp board to sleep after [TIME2SLEEP] minutes
@@ -73,14 +76,40 @@ int WEB_PORT = 80;
 //Auto Usb Wait(milliseconds)
 int USB_WAIT = 12000;
 
-// Displayed firmware version
-String firmwareVer = "2.2.2";
-
 //-----------------------------------------------------//
 
+#if USBCONTROL | defined(CONFIG_IDF_TARGET_ESP32S2) | defined(CONFIG_IDF_TARGET_ESP32S3)
+  #include "loader1.h"
+  #include "index1.h"
+#else
+  #include "loader2.h"
+  #include "index2.h"
+  #include "menu.h"
+#endif
 
-#include "Loader.h"
-#include "Pages.h"
+#include "rebooting.h"
+#include "update.h"
+#include "upload.h"
+
+#if USECONFIG
+  #include "admin1.h"
+#else
+  #include "admin2.h"
+#endif
+
+#include "reboot.h"
+#include "format.h"
+
+#if INTHEN
+  #include "autohen.h"
+#endif
+
+#if !USBCONTROL && defined(CONFIG_IDF_TARGET_ESP32)
+  #include "style1.h"
+#else
+  #include "style2.h"
+#endif
+
 #include "jzip.h"
 
 #if USESD

@@ -7,9 +7,9 @@
 #include <Update.h>
 
 // Displayed firmware version
-String firmwareVer = "2.2.2";
+String firmwareVer = "2.2.4";
 
-#define INTHEN_NAME "GoldHEN v2.2.2"
+#define INTHEN_NAME "GoldHEN v2.2.4"
 
 #if defined(CONFIG_IDF_TARGET_ESP32S2) | defined(CONFIG_IDF_TARGET_ESP32S3) // ESP32-S2/S3 BOARDS(usb emulation)
 #include "USB.h"

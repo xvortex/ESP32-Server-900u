@@ -7,9 +7,9 @@
 #include <Update.h>
 
 // Displayed firmware version
-String firmwareVer = "2.2.4";
+String firmwareVer = "2.3.0";
 
-#define INTHEN_NAME "GoldHEN v2.2.4"
+#define INTHEN_NAME "GoldHEN v2.3.0"
 
 #if defined(CONFIG_IDF_TARGET_ESP32S2) | defined(CONFIG_IDF_TARGET_ESP32S3) // ESP32-S2/S3 BOARDS(usb emulation)
 #include "USB.h"
@@ -693,15 +693,15 @@ void setup(){
     }
    iniFile.close();
    
-   if(instr(iniData,"SSID="))
+   if(instr(iniData,"AP_SSID="))
    {
-   AP_SSID = split(iniData,"SSID=","\r\n");
+   AP_SSID = split(iniData,"AP_SSID=","\r\n");
    AP_SSID.trim();
    }
    
-   if(instr(iniData,"PASSWORD="))
+   if(instr(iniData,"AP_PASS="))
    {
-   AP_PASS = split(iniData,"PASSWORD=","\r\n");
+   AP_PASS = split(iniData,"AP_PASS=","\r\n");
    AP_PASS.trim();
    }
    
